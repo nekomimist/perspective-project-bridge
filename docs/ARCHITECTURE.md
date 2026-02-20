@@ -30,6 +30,17 @@
     - No prompt/switch when already in the target project perspective.
     - No prompt/switch when no project root is available.
     - Reentry guard avoids nested advice behavior.
+- Consult file action (`:around`)
+  - Added when `consult--file-action` is available.
+  - Behavior:
+    1. Resolve the selected file's project.
+    2. Optionally prompt with a consult-specific message.
+    3. On confirmation, switch to the project perspective.
+    4. Run `consult--file-action` to select/open the target buffer.
+  - Safety:
+    - Existing file buffers and newly opened files use the same project switch decision.
+    - No prompt/switch when already in the target project perspective.
+    - No prompt/switch when no project root is available.
 
 ## Customization Surface
 - `perspective-project-bridge-project-functions`
@@ -38,3 +49,7 @@
   - Which find-file commands prompt for perspective switching.
 - `perspective-project-bridge-confirm-on-interactive-find-file`
   - Whether interactive find-file calls prompt for switching.
+- `perspective-project-bridge-consult-prompt-on-file-action`
+  - Whether consult file actions prompt for switching.
+- `perspective-project-bridge-consult-prompt-format`
+  - Prompt format used for consult file actions.

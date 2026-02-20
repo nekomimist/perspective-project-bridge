@@ -93,6 +93,17 @@
   :group 'perspective-project-bridge
   :type 'boolean)
 
+(defcustom perspective-project-bridge-consult-prompt-on-file-action t
+  "Ask before switching perspectives for `consult--file-action'."
+  :group 'perspective-project-bridge
+  :type 'boolean)
+
+(defcustom perspective-project-bridge-consult-prompt-format
+  "Move selected buffer to project perspective `%s'? "
+  "Prompt format used for `consult--file-action' perspective switching."
+  :group 'perspective-project-bridge
+  :type 'string)
+
 (defvar perspective-project-bridge-persp nil
   "Indicate if perspective is project-specific.")
 
@@ -138,6 +149,27 @@
     (with-perspective (persp-name persp)
       (setq perspective-project-bridge-persp t))
     (persp-switch (persp-name persp))))
+
+(defun perspective-project-bridge--add-advice-once (symbol where function)
+  "Add FUNCTION as advice on SYMBOL at WHERE, unless it is already present."
+  (unless (advice-member-p function symbol)
+    (advice-add symbol where function)))
+
+(defun perspective-project-bridge--remove-advice-if-present (symbol function)
+  "Remove FUNCTION advice from SYMBOL when present."
+  (when (advice-member-p function symbol)
+    (advice-remove symbol function)))
+
+(defun perspective-project-bridge--maybe-prompt-and-switch (project-name prompt-format)
+  "Prompt with PROMPT-FORMAT and switch to PROJECT-NAME when confirmed.
+PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
+  (let* ((current-perspective (persp-curr))
+	 (current-perspective-name (and current-perspective
+					(persp-name current-perspective))))
+    (when (and project-name
+	       (not (equal current-perspective-name project-name))
+	       (y-or-n-p (format prompt-format project-name)))
+      (perspective-project-bridge--switch-to-project-perspective project-name))))
 
 (defun perspective-project-bridge-find-perspective-for-buffer (buffer)
   "Find a project-specific perspective for BUFFER.
@@ -194,19 +226,40 @@
 	     (project-name (and interactive-call
 				perspective-project-bridge-confirm-on-interactive-find-file
 				(perspective-project-bridge--project-name-for-file
-				 (car args))))
-	     (current-perspective-name (and (persp-curr)
-					    (persp-name (persp-curr))))
-	     (already-in-project-perspective (and project-name
-						  (equal current-perspective-name
-							 project-name))))
-	(when (and interactive-call
-		   project-name
-		   (not already-in-project-perspective)
-		   (y-or-n-p (format "Switch to project perspective `%s'? "
-				     project-name)))
-	  (perspective-project-bridge--switch-to-project-perspective project-name))
+				 (car args)))))
+	(when project-name
+	  (perspective-project-bridge--maybe-prompt-and-switch
+	   project-name
+	   "Switch to project perspective `%s'? "))
 	(apply orig-fun args)))))
+
+(defun perspective-project-bridge-consult-file-action-advice (orig-fun file &rest args)
+  "Around advice for `consult--file-action'."
+  (if (or perspective-project-bridge--in-find-file-advice
+	  (not perspective-project-bridge-mode))
+      (apply orig-fun file args)
+    (let* ((perspective-project-bridge--in-find-file-advice t)
+	   (project-name (and perspective-project-bridge-consult-prompt-on-file-action
+			      (perspective-project-bridge--project-name-for-file file))))
+      (when project-name
+	(perspective-project-bridge--maybe-prompt-and-switch
+	 project-name
+	 perspective-project-bridge-consult-prompt-format))
+      (apply orig-fun file args))))
+
+(defun perspective-project-bridge--add-consult-advice-if-available ()
+  "Add consult advice when consult is available."
+  (when (fboundp 'consult--file-action)
+    (perspective-project-bridge--add-advice-once
+     'consult--file-action :around
+     #'perspective-project-bridge-consult-file-action-advice)))
+
+(defun perspective-project-bridge--remove-consult-advice-if-available ()
+  "Remove consult advice when consult is available."
+  (when (fboundp 'consult--file-action)
+    (perspective-project-bridge--remove-advice-if-present
+     'consult--file-action
+     #'perspective-project-bridge-consult-file-action-advice)))
 
 ;;;###autoload
 (define-minor-mode perspective-project-bridge-mode
@@ -219,18 +272,27 @@ Creates perspectives for project.el projects."
 	  (progn
 	    ;; Add advices
 	    (dolist (func perspective-project-bridge-project-functions)
-	      (advice-add func :after #'perspective-project-bridge))
+	      (perspective-project-bridge--add-advice-once
+	       func :after #'perspective-project-bridge))
 	    (dolist (func perspective-project-bridge-find-file-functions)
-	      (advice-add func :around #'perspective-project-bridge-find-file-advice))
+	      (perspective-project-bridge--add-advice-once
+	       func :around #'perspective-project-bridge-find-file-advice))
+	    (perspective-project-bridge--add-consult-advice-if-available)
+	    (with-eval-after-load 'consult
+	      (when perspective-project-bridge-mode
+		(perspective-project-bridge--add-consult-advice-if-available)))
 	    (persp-make-variable-persp-local 'perspective-project-bridge-persp))
 	(message "You can not enable perspective-project-bridge-mode \
 unless persp is active.")
 	(perspective-project-bridge-mode -1))
     ;; Remove advices
     (dolist (func perspective-project-bridge-project-functions)
-      (advice-remove func #'perspective-project-bridge))
+      (perspective-project-bridge--remove-advice-if-present
+       func #'perspective-project-bridge))
     (dolist (func perspective-project-bridge-find-file-functions)
-      (advice-remove func #'perspective-project-bridge-find-file-advice))))
+      (perspective-project-bridge--remove-advice-if-present
+       func #'perspective-project-bridge-find-file-advice))
+    (perspective-project-bridge--remove-consult-advice-if-available)))
 
 (provide 'perspective-project-bridge)
 
