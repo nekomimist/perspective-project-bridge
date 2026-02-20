@@ -83,18 +83,20 @@
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (when (and perspective-project-bridge-mode
-		 (buffer-name buffer)
-		 (project-current))
-	(let* ((name (file-name-nondirectory
-		      (directory-file-name
-		       (if (fboundp 'project-root)
-			   (project-root (project-current))
-			 (car (project-roots (project-current)))))))
-	       (persp (persp-new name)))
-	  (with-perspective (persp-name persp)
-	    (setq perspective-project-bridge-persp t)
-	    (persp-add-buffer buffer))
-	  persp)))))
+		 (buffer-name buffer))
+	(let* ((project (project-current))
+	       (root (and project
+			  (if (fboundp 'project-root)
+			      (project-root project)
+			    (car (project-roots project))))))
+	  (when root
+	    (let* ((name (file-name-nondirectory
+			  (directory-file-name root)))
+		   (persp (persp-new name)))
+	      (with-perspective (persp-name persp)
+		(setq perspective-project-bridge-persp t)
+		(persp-add-buffer buffer))
+	      persp)))))))
 
 (defun perspective-project-bridge-find-perspectives-for-all-buffers ()
   "Find project-specific perspectives for all buffers."
