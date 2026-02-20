@@ -1,12 +1,14 @@
 ;;; perspective-project-bridge.el --- Integration of perspective.el + project.el -*- lexical-binding: t; -*-
 
-;;
-;; Author: Arunkumar Vaidyanathan <arunkumarmv1997@gmail.com>
-;; Version: 0.1
+;; 
+;; Author: Hiroyuki Ishikura <nekomist@gmail.com>
+;; Original-Author: Arunkumar Vaidyanathan <arunkumarmv1997@gmail.com>
+;; Version: 0.1+
 ;; Package-Requires: ((emacs "27.1") (perspective "2.18"))
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Keywords: perspective, project, convenience, frames
-;; URL: https://github.com/arunkmv/perspective-project-bridge
+;; URL: https://github.com/nekomimist/perspective-project-bridge
+;; Original-URL: https://github.com/arunkmv/perspective-project-bridge
 
 ;;; License:
 
