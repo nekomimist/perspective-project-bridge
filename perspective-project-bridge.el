@@ -72,31 +72,86 @@
   :group 'project
   :prefix "perspective-project-bridge-")
 
+(defcustom perspective-project-bridge-project-functions
+  (list 'project-find-file 'project-find-regexp 'project-find-dir)
+  "Project commands that should trigger perspective switching."
+  :group 'perspective-project-bridge
+  :type '(repeat function))
+
+(defvaralias 'perspective-project-bridge-funcs
+  'perspective-project-bridge-project-functions)
+
+(defcustom perspective-project-bridge-find-file-functions
+  (list 'find-file 'find-file-other-window
+	'find-file-other-frame 'find-file-read-only)
+  "Interactive `find-file' commands that should ask about switching perspectives."
+  :group 'perspective-project-bridge
+  :type '(repeat function))
+
+(defcustom perspective-project-bridge-confirm-on-interactive-find-file t
+  "Ask before switching perspectives for interactive `find-file' commands."
+  :group 'perspective-project-bridge
+  :type 'boolean)
+
 (defvar perspective-project-bridge-persp nil
   "Indicate if perspective is project-specific.")
+
+(defvar perspective-project-bridge--in-find-file-advice nil
+  "Non-nil while `find-file' advice is running.")
+
+(defun perspective-project-bridge--project-root (project)
+  "Return root directory for PROJECT, or nil if it is unavailable."
+  (when project
+    (if (fboundp 'project-root)
+	(project-root project)
+      (car (project-roots project)))))
+
+(defun perspective-project-bridge--project-name-for-buffer (buffer)
+  "Return project perspective name for BUFFER, or nil."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (buffer-name buffer)
+	(let* ((project (project-current))
+	       (root (perspective-project-bridge--project-root project)))
+	  (when root
+	    (file-name-nondirectory
+	     (directory-file-name root))))))))
+
+(defun perspective-project-bridge--project-name-for-file (file)
+  "Return project perspective name for FILE, or nil."
+  (when (and file (stringp file))
+    (let* ((expanded-file (expand-file-name file))
+	   (directory (or (and (file-directory-p expanded-file)
+			       (file-name-as-directory expanded-file))
+			  (file-name-directory expanded-file))))
+      (when directory
+	(let ((default-directory directory))
+	  (let* ((project (project-current))
+		 (root (perspective-project-bridge--project-root project)))
+	    (when root
+	      (file-name-nondirectory
+	       (directory-file-name root)))))))))
+
+(defun perspective-project-bridge--switch-to-project-perspective (name)
+  "Switch to perspective NAME and mark it as project-specific."
+  (let ((persp (persp-new name)))
+    (with-perspective (persp-name persp)
+      (setq perspective-project-bridge-persp t))
+    (persp-switch (persp-name persp))))
 
 (defun perspective-project-bridge-find-perspective-for-buffer (buffer)
   "Find a project-specific perspective for BUFFER.
 
    If no such perspective exists, a new one is created and the buffer is
    added to it"
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (when (and perspective-project-bridge-mode
-		 (buffer-name buffer))
-	(let* ((project (project-current))
-	       (root (and project
-			  (if (fboundp 'project-root)
-			      (project-root project)
-			    (car (project-roots project))))))
-	  (when root
-	    (let* ((name (file-name-nondirectory
-			  (directory-file-name root)))
-		   (persp (persp-new name)))
-	      (with-perspective (persp-name persp)
-		(setq perspective-project-bridge-persp t)
-		(persp-add-buffer buffer))
-	      persp)))))))
+  (when perspective-project-bridge-mode
+    (let* ((name (perspective-project-bridge--project-name-for-buffer buffer)))
+      (when name
+	(let ((persp (persp-new name)))
+	  (with-perspective (persp-name persp)
+	    (setq perspective-project-bridge-persp t)
+	    (persp-add-buffer buffer))
+	  persp)))))
 
 (defun perspective-project-bridge-find-perspectives-for-all-buffers ()
   "Find project-specific perspectives for all buffers."
@@ -129,8 +184,29 @@
       (persp-switch (persp-name persp))
       (persp-switch-to-buffer b))))
 
-(defvar perspective-project-bridge-funcs
-  (list 'project-find-file 'project-find-regexp 'project-find-dir))
+(defun perspective-project-bridge-find-file-advice (orig-fun &rest args)
+  "Around advice for interactive `find-file' style commands."
+  (let ((interactive-call (called-interactively-p 'interactive)))
+    (if (or perspective-project-bridge--in-find-file-advice
+	    (not perspective-project-bridge-mode))
+	(apply orig-fun args)
+      (let* ((perspective-project-bridge--in-find-file-advice t)
+	     (project-name (and interactive-call
+				perspective-project-bridge-confirm-on-interactive-find-file
+				(perspective-project-bridge--project-name-for-file
+				 (car args))))
+	     (current-perspective-name (and (persp-curr)
+					    (persp-name (persp-curr))))
+	     (already-in-project-perspective (and project-name
+						  (equal current-perspective-name
+							 project-name))))
+	(when (and interactive-call
+		   project-name
+		   (not already-in-project-perspective)
+		   (y-or-n-p (format "Switch to project perspective `%s'? "
+				     project-name)))
+	  (perspective-project-bridge--switch-to-project-perspective project-name))
+	(apply orig-fun args)))))
 
 ;;;###autoload
 (define-minor-mode perspective-project-bridge-mode
@@ -142,15 +218,19 @@ Creates perspectives for project.el projects."
       (if persp-mode
 	  (progn
 	    ;; Add advices
-	    (dolist (func perspective-project-bridge-funcs)
+	    (dolist (func perspective-project-bridge-project-functions)
 	      (advice-add func :after #'perspective-project-bridge))
+	    (dolist (func perspective-project-bridge-find-file-functions)
+	      (advice-add func :around #'perspective-project-bridge-find-file-advice))
 	    (persp-make-variable-persp-local 'perspective-project-bridge-persp))
 	(message "You can not enable perspective-project-bridge-mode \
 unless persp is active.")
 	(perspective-project-bridge-mode -1))
     ;; Remove advices
-    (dolist (func perspective-project-bridge-funcs)
-      (advice-remove func #'perspective-project-bridge))))
+    (dolist (func perspective-project-bridge-project-functions)
+      (advice-remove func #'perspective-project-bridge))
+    (dolist (func perspective-project-bridge-find-file-functions)
+      (advice-remove func #'perspective-project-bridge-find-file-advice))))
 
 (provide 'perspective-project-bridge)
 

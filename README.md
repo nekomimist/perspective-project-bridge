@@ -36,3 +36,11 @@ By adding the following hook, all buffers are automatically assigned a project-s
 					 (perspective-project-bridge-find-perspectives-for-all-buffers)
 				   (perspective-project-bridge-kill-perspectives))))
 ```
+
+### Interactive `find-file` behavior
+When `perspective-project-bridge-mode` is enabled, interactive file-opening commands ask whether to switch to the target project's perspective before continuing in that project workspace.
+
+- Prompted commands are controlled by `perspective-project-bridge-find-file-functions`.
+- Prompting can be disabled with `perspective-project-bridge-confirm-on-interactive-find-file`.
+- If the current perspective already matches the target project perspective, no prompt is shown.
+- If the opened file is not in a detected project (or project root is unavailable), no prompt is shown and the file stays in the current perspective.
