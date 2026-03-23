@@ -42,7 +42,9 @@ When `perspective-project-bridge-mode` is enabled, interactive file-opening comm
 - Prompted commands are controlled by `perspective-project-bridge-find-file-functions`.
 - Prompting can be disabled with `perspective-project-bridge-confirm-on-interactive-find-file`.
 - If the current perspective already matches the target project perspective, no prompt is shown.
-- If the opened file is not in a detected project (or project root is unavailable), no prompt is shown and the file stays in the current perspective.
+- If the opened file is not in a detected project, you are asked whether to switch to `persp-initial-frame-name`.
+- If the opened file is not in a detected project (or project root is unavailable) and non-project prompting is disabled, the file stays in the current perspective.
+- The non-project prompt text is customizable via `perspective-project-bridge-non-project-file-prompt-format`.
 
 ### `consult-buffer` file selection behavior
 When `consult` is available, `consult--file-action` is integrated too:
@@ -51,3 +53,4 @@ When `consult` is available, `consult--file-action` is integrated too:
 - Existing file buffers and newly opened files are handled with the same switching rules.
 - Prompting can be disabled with `perspective-project-bridge-consult-prompt-on-file-action`.
 - Prompt text is customizable via `perspective-project-bridge-consult-prompt-format`.
+- Non-project file candidates also prompt for a switch to `persp-initial-frame-name` by default.

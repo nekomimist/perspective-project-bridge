@@ -106,11 +106,26 @@
   :group 'perspective-project-bridge
   :type 'string)
 
+(defcustom perspective-project-bridge-prompt-on-non-project-file t
+  "Ask before switching to `persp-initial-frame-name' for non-project files."
+  :group 'perspective-project-bridge
+  :type 'boolean)
+
+(defcustom perspective-project-bridge-non-project-file-prompt-format
+  "Switch to initial perspective `%s'? "
+  "Prompt format used when opening non-project files in the initial perspective."
+  :group 'perspective-project-bridge
+  :type 'string)
+
 (defvar perspective-project-bridge-persp nil
   "Indicate if perspective is project-specific.")
 
 (defvar perspective-project-bridge--in-find-file-advice nil
   "Non-nil while `find-file' advice is running.")
+
+(defconst perspective-project-bridge--find-file-project-prompt-format
+  "Switch to project perspective `%s'? "
+  "Prompt format used for project perspective switching in `find-file' advice.")
 
 (defun perspective-project-bridge--project-root (project)
   "Return root directory for PROJECT, or nil if it is unavailable."
@@ -144,6 +159,26 @@
 	    (when root
 	      (file-name-nondirectory
 	       (directory-file-name root)))))))))
+
+(defun perspective-project-bridge--non-project-perspective-name ()
+  "Return the initial perspective name for non-project files, or nil."
+  (when (and perspective-project-bridge-prompt-on-non-project-file
+	     (stringp persp-initial-frame-name)
+	     (not (string= persp-initial-frame-name "")))
+    persp-initial-frame-name))
+
+(defun perspective-project-bridge--switch-target-for-file
+    (file project-prompt-format)
+  "Return switch target for FILE as a cons of name and prompt format.
+PROJECT-PROMPT-FORMAT is used when FILE belongs to a detected project."
+  (let ((project-name (perspective-project-bridge--project-name-for-file file))
+	(non-project-name (perspective-project-bridge--non-project-perspective-name)))
+    (cond
+     (project-name
+      (cons project-name project-prompt-format))
+     (non-project-name
+      (cons non-project-name
+	    perspective-project-bridge-non-project-file-prompt-format)))))
 
 (defun perspective-project-bridge--switch-to-project-perspective (name)
   "Switch to perspective NAME and mark it as project-specific."
@@ -225,14 +260,15 @@ PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
 	    (not perspective-project-bridge-mode))
 	(apply orig-fun args)
       (let* ((perspective-project-bridge--in-find-file-advice t)
-	     (project-name (and interactive-call
-				perspective-project-bridge-confirm-on-interactive-find-file
-				(perspective-project-bridge--project-name-for-file
-				 (car args)))))
-	(when project-name
+	     (target (and interactive-call
+			  perspective-project-bridge-confirm-on-interactive-find-file
+			  (perspective-project-bridge--switch-target-for-file
+			   (car args)
+			   perspective-project-bridge--find-file-project-prompt-format))))
+	(when target
 	  (perspective-project-bridge--maybe-prompt-and-switch
-	   project-name
-	   "Switch to project perspective `%s'? "))
+	   (car target)
+	   (cdr target)))
 	(apply orig-fun args)))))
 
 (defun perspective-project-bridge-consult-file-action-advice (orig-fun file &rest args)
@@ -241,12 +277,14 @@ PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
 	  (not perspective-project-bridge-mode))
       (apply orig-fun file args)
     (let* ((perspective-project-bridge--in-find-file-advice t)
-	   (project-name (and perspective-project-bridge-consult-prompt-on-file-action
-			      (perspective-project-bridge--project-name-for-file file))))
-      (when project-name
+	   (target (and perspective-project-bridge-consult-prompt-on-file-action
+			(perspective-project-bridge--switch-target-for-file
+			 file
+			 perspective-project-bridge-consult-prompt-format))))
+      (when target
 	(perspective-project-bridge--maybe-prompt-and-switch
-	 project-name
-	 perspective-project-bridge-consult-prompt-format))
+	 (car target)
+	 (cdr target)))
       (apply orig-fun file args))))
 
 (defun perspective-project-bridge--add-consult-advice-if-available ()

@@ -22,25 +22,27 @@
   - Default commands: `find-file`, `find-file-other-window`, `find-file-other-frame`, `find-file-read-only`.
   - Behavior:
     1. Resolve the target file's project from the command argument.
-    2. If call was interactive and confirmation is enabled, prompt to switch.
-    3. On confirmation, switch to the project perspective.
-    4. Execute the original find-file command in the selected perspective.
+    2. If no project is found, target `persp-initial-frame-name` unless non-project prompting is disabled.
+    3. If call was interactive and confirmation is enabled, prompt to switch.
+    4. On confirmation, switch to the selected perspective.
+    5. Execute the original find-file command in the selected perspective.
   - Safety:
     - No prompt/switch for non-interactive calls.
-    - No prompt/switch when already in the target project perspective.
-    - No prompt/switch when no project root is available.
+    - No prompt/switch when already in the target perspective.
+    - No prompt/switch when no project root is available and non-project prompting is disabled.
     - Reentry guard avoids nested advice behavior.
 - Consult file action (`:around`)
   - Added when `consult--file-action` is available.
   - Behavior:
     1. Resolve the selected file's project.
-    2. Optionally prompt with a consult-specific message.
-    3. On confirmation, switch to the project perspective.
-    4. Run `consult--file-action` to select/open the target buffer.
+    2. If no project is found, target `persp-initial-frame-name` unless non-project prompting is disabled.
+    3. Optionally prompt with a consult-specific message.
+    4. On confirmation, switch to the selected perspective.
+    5. Run `consult--file-action` to select/open the target buffer.
   - Safety:
     - Existing file buffers and newly opened files use the same project switch decision.
-    - No prompt/switch when already in the target project perspective.
-    - No prompt/switch when no project root is available.
+    - No prompt/switch when already in the target perspective.
+    - No prompt/switch when no project root is available and non-project prompting is disabled.
 
 ## Customization Surface
 - `perspective-project-bridge-project-functions`
@@ -53,3 +55,7 @@
   - Whether consult file actions prompt for switching.
 - `perspective-project-bridge-consult-prompt-format`
   - Prompt format used for consult file actions.
+- `perspective-project-bridge-prompt-on-non-project-file`
+  - Whether non-project files prompt for switching to `persp-initial-frame-name`.
+- `perspective-project-bridge-non-project-file-prompt-format`
+  - Prompt format used when non-project files target the initial perspective.
