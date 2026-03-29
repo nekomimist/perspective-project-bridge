@@ -23,8 +23,8 @@
   - Behavior:
     1. Resolve the target file's project from the command argument.
     2. If no project is found, target `persp-initial-frame-name` unless non-project prompting is disabled.
-    3. If call was interactive and confirmation is enabled, prompt to switch.
-    4. On confirmation, switch to the selected perspective.
+    3. If call was interactive, apply the configured switch policy: `prompt`, `always`, or `never`.
+    4. On `prompt` confirmation or `always`, switch to the selected perspective.
     5. Execute the original find-file command in the selected perspective.
   - Safety:
     - No prompt/switch for non-interactive calls.
@@ -36,8 +36,8 @@
   - Behavior:
     1. Resolve the selected file's project.
     2. If no project is found, target `persp-initial-frame-name` unless non-project prompting is disabled.
-    3. Optionally prompt with a consult-specific message.
-    4. On confirmation, switch to the selected perspective.
+    3. Apply the configured switch policy: `prompt`, `always`, or `never`.
+    4. On `prompt` confirmation or `always`, switch to the selected perspective.
     5. Run `consult--file-action` to select/open the target buffer.
   - Safety:
     - Existing file buffers and newly opened files use the same project switch decision.
@@ -50,9 +50,9 @@
 - `perspective-project-bridge-find-file-functions`
   - Which find-file commands prompt for perspective switching.
 - `perspective-project-bridge-confirm-on-interactive-find-file`
-  - Whether interactive find-file calls prompt for switching.
+  - Switch policy for interactive find-file calls (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
 - `perspective-project-bridge-consult-prompt-on-file-action`
-  - Whether consult file actions prompt for switching.
+  - Switch policy for consult file actions (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
 - `perspective-project-bridge-consult-prompt-format`
   - Prompt format used for consult file actions.
 - `perspective-project-bridge-prompt-on-non-project-file`

@@ -90,15 +90,29 @@
   :group 'perspective-project-bridge
   :type '(repeat function))
 
-(defcustom perspective-project-bridge-confirm-on-interactive-find-file t
-  "Ask before switching perspectives for interactive `find-file' commands."
-  :group 'perspective-project-bridge
-  :type 'boolean)
+(defcustom perspective-project-bridge-confirm-on-interactive-find-file 'prompt
+  "Switch policy for interactive `find-file' commands.
+Use `prompt' to ask before switching, `always' to switch without
+asking, or `never' to keep the current perspective.
 
-(defcustom perspective-project-bridge-consult-prompt-on-file-action t
-  "Ask before switching perspectives for `consult--file-action'."
+Legacy boolean values are supported for compatibility: `t' means
+`prompt' and `nil' means `never'."
   :group 'perspective-project-bridge
-  :type 'boolean)
+  :type '(choice (const :tag "Prompt before switching" prompt)
+		 (const :tag "Switch automatically" always)
+		 (const :tag "Never switch" never)))
+
+(defcustom perspective-project-bridge-consult-prompt-on-file-action 'prompt
+  "Switch policy for `consult--file-action'.
+Use `prompt' to ask before switching, `always' to switch without
+asking, or `never' to keep the current perspective.
+
+Legacy boolean values are supported for compatibility: `t' means
+`prompt' and `nil' means `never'."
+  :group 'perspective-project-bridge
+  :type '(choice (const :tag "Prompt before switching" prompt)
+		 (const :tag "Switch automatically" always)
+		 (const :tag "Never switch" never)))
 
 (defcustom perspective-project-bridge-consult-prompt-format
   "Move selected buffer to project perspective `%s'? "
@@ -126,6 +140,19 @@
 (defconst perspective-project-bridge--find-file-project-prompt-format
   "Switch to project perspective `%s'? "
   "Prompt format used for project perspective switching in `find-file' advice.")
+
+(defun perspective-project-bridge--normalize-switch-policy (policy)
+  "Return canonical switch policy for POLICY.
+Canonical values are `prompt', `always', and `never'."
+  (cond
+   ((or (eq policy 'prompt) (eq policy t))
+    'prompt)
+   ((eq policy 'always)
+    'always)
+   ((or (eq policy 'never) (null policy))
+    'never)
+   (t
+    (error "Invalid perspective-project-bridge switch policy: %S" policy))))
 
 (defun perspective-project-bridge--project-root (project)
   "Return root directory for PROJECT, or nil if it is unavailable."
@@ -197,16 +224,43 @@ PROJECT-PROMPT-FORMAT is used when FILE belongs to a detected project."
   (when (advice-member-p function symbol)
     (advice-remove symbol function)))
 
-(defun perspective-project-bridge--maybe-prompt-and-switch (project-name prompt-format)
-  "Prompt with PROMPT-FORMAT and switch to PROJECT-NAME when confirmed.
-PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
+(defun perspective-project-bridge--current-perspective-name ()
+  "Return the current perspective name, or nil."
   (let* ((current-perspective (persp-curr))
 	 (current-perspective-name (and current-perspective
 					(persp-name current-perspective))))
-    (when (and project-name
-	       (not (equal current-perspective-name project-name))
-	       (y-or-n-p (format prompt-format project-name)))
-      (perspective-project-bridge--switch-to-project-perspective project-name))))
+    current-perspective-name))
+
+(defun perspective-project-bridge--switch-if-needed (project-name)
+  "Switch to PROJECT-NAME unless it is already current."
+  (when (and project-name
+	     (not (equal (perspective-project-bridge--current-perspective-name)
+			 project-name)))
+    (perspective-project-bridge--switch-to-project-perspective project-name)))
+
+(defun perspective-project-bridge--prompt-and-switch-if-needed
+    (project-name prompt-format)
+  "Prompt with PROMPT-FORMAT and switch to PROJECT-NAME when confirmed.
+PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
+  (when (and project-name
+	     (not (equal (perspective-project-bridge--current-perspective-name)
+			 project-name))
+	     (y-or-n-p (format prompt-format project-name)))
+    (perspective-project-bridge--switch-to-project-perspective project-name)))
+
+(defun perspective-project-bridge--apply-switch-policy (policy target)
+  "Apply switch POLICY to TARGET.
+TARGET must be a cons of perspective name and prompt format, or nil."
+  (when target
+    (pcase (perspective-project-bridge--normalize-switch-policy policy)
+      ('prompt
+       (perspective-project-bridge--prompt-and-switch-if-needed
+	(car target)
+	(cdr target)))
+      ('always
+       (perspective-project-bridge--switch-if-needed (car target)))
+      ('never
+       nil))))
 
 (defun perspective-project-bridge-find-perspective-for-buffer (buffer)
   "Find a project-specific perspective for BUFFER.
@@ -261,14 +315,12 @@ PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
 	(apply orig-fun args)
       (let* ((perspective-project-bridge--in-find-file-advice t)
 	     (target (and interactive-call
-			  perspective-project-bridge-confirm-on-interactive-find-file
 			  (perspective-project-bridge--switch-target-for-file
 			   (car args)
 			   perspective-project-bridge--find-file-project-prompt-format))))
-	(when target
-	  (perspective-project-bridge--maybe-prompt-and-switch
-	   (car target)
-	   (cdr target)))
+	(perspective-project-bridge--apply-switch-policy
+	 perspective-project-bridge-confirm-on-interactive-find-file
+	 target)
 	(apply orig-fun args)))))
 
 (defun perspective-project-bridge-consult-file-action-advice (orig-fun file &rest args)
@@ -277,14 +329,12 @@ PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
 	  (not perspective-project-bridge-mode))
       (apply orig-fun file args)
     (let* ((perspective-project-bridge--in-find-file-advice t)
-	   (target (and perspective-project-bridge-consult-prompt-on-file-action
-			(perspective-project-bridge--switch-target-for-file
-			 file
-			 perspective-project-bridge-consult-prompt-format))))
-      (when target
-	(perspective-project-bridge--maybe-prompt-and-switch
-	 (car target)
-	 (cdr target)))
+	   (target (perspective-project-bridge--switch-target-for-file
+		    file
+		    perspective-project-bridge-consult-prompt-format)))
+      (perspective-project-bridge--apply-switch-policy
+       perspective-project-bridge-consult-prompt-on-file-action
+       target)
       (apply orig-fun file args))))
 
 (defun perspective-project-bridge--add-consult-advice-if-available ()
