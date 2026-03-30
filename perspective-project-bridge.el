@@ -66,6 +66,11 @@
 (require 'project)
 (require 'cl-lib)
 
+(defvar consult-buffer-sources)
+(defvar consult--buffer-display)
+
+(declare-function consult-buffer "consult")
+
 (defvar perspective-project-bridge-mode nil)
 
 (defgroup perspective-project-bridge nil
@@ -103,7 +108,7 @@ Legacy boolean values are supported for compatibility: `t' means
 		 (const :tag "Never switch" never)))
 
 (defcustom perspective-project-bridge-consult-prompt-on-file-action 'prompt
-  "Switch policy for `consult--file-action'.
+  "Switch policy for file actions in `consult-buffer-with-project-perspective'.
 Use `prompt' to ask before switching, `always' to switch without
 asking, or `never' to keep the current perspective.
 
@@ -116,7 +121,26 @@ Legacy boolean values are supported for compatibility: `t' means
 
 (defcustom perspective-project-bridge-consult-prompt-format
   "Move selected buffer to project perspective `%s'? "
-  "Prompt format used for `consult--file-action' perspective switching."
+  "Prompt format used for file actions in `consult-buffer-with-project-perspective'."
+  :group 'perspective-project-bridge
+  :type 'string)
+
+(defcustom perspective-project-bridge-consult-buffer-switch-policy 'prompt
+  "Switch policy for buffer actions in `consult-buffer-with-project-perspective'.
+Use `prompt' to choose between switching or moving, `always' to
+switch to the buffer's perspective, or `never' to keep the
+current perspective and move the buffer there.
+
+Compatibility aliases are supported: `query' and `t' mean
+`prompt', and `nil' means `never'."
+  :group 'perspective-project-bridge
+  :type '(choice (const :tag "Choose switch or move" prompt)
+		 (const :tag "Switch automatically" always)
+		 (const :tag "Move automatically" never)))
+
+(defcustom perspective-project-bridge-consult-buffer-prompt-format
+  "Buffer `%s' belongs to perspective `%s' while current perspective is `%s'."
+  "Prompt format used before choosing switch or move for consult buffer actions."
   :group 'perspective-project-bridge
   :type 'string)
 
@@ -137,6 +161,12 @@ Legacy boolean values are supported for compatibility: `t' means
 (defvar perspective-project-bridge--in-find-file-advice nil
   "Non-nil while `find-file' advice is running.")
 
+(defvar perspective-project-bridge--consult-buffer-action-function nil
+  "Original consult buffer action used by `consult-buffer-with-project-perspective'.")
+
+(defvar perspective-project-bridge--consult-file-action-function nil
+  "Original consult file action used by `consult-buffer-with-project-perspective'.")
+
 (defconst perspective-project-bridge--find-file-project-prompt-format
   "Switch to project perspective `%s'? "
   "Prompt format used for project perspective switching in `find-file' advice.")
@@ -153,6 +183,20 @@ Canonical values are `prompt', `always', and `never'."
     'never)
    (t
     (error "Invalid perspective-project-bridge switch policy: %S" policy))))
+
+(defun perspective-project-bridge--normalize-consult-buffer-switch-policy (policy)
+  "Return canonical consult buffer switch policy for POLICY.
+Canonical values are `prompt', `always', and `never'."
+  (cond
+   ((or (eq policy 'prompt) (eq policy 'query) (eq policy t))
+    'prompt)
+   ((eq policy 'always)
+    'always)
+   ((or (eq policy 'never) (null policy))
+    'never)
+   (t
+    (error "Invalid perspective-project-bridge consult buffer switch policy: %S"
+	   policy))))
 
 (defun perspective-project-bridge--project-root (project)
   "Return root directory for PROJECT, or nil if it is unavailable."
@@ -238,6 +282,13 @@ PROJECT-PROMPT-FORMAT is used when FILE belongs to a detected project."
 			 project-name)))
     (perspective-project-bridge--switch-to-project-perspective project-name)))
 
+(defun perspective-project-bridge--switch-perspective-if-needed (name)
+  "Switch to perspective NAME unless it is already current."
+  (when (and name
+	     (not (equal (perspective-project-bridge--current-perspective-name)
+			 name)))
+    (persp-switch name)))
+
 (defun perspective-project-bridge--prompt-and-switch-if-needed
     (project-name prompt-format)
   "Prompt with PROMPT-FORMAT and switch to PROJECT-NAME when confirmed.
@@ -261,6 +312,118 @@ TARGET must be a cons of perspective name and prompt format, or nil."
        (perspective-project-bridge--switch-if-needed (car target)))
       ('never
        nil))))
+
+(defun perspective-project-bridge--consult-buffer-target-for-buffer (buffer)
+  "Return consult buffer target plist for BUFFER, or nil.
+The plist contains `:name' and `:kind'."
+  (when (buffer-live-p buffer)
+    (let ((project-name (perspective-project-bridge--project-name-for-buffer buffer)))
+      (cond
+       (project-name
+	(list :name project-name :kind 'project))
+       (t
+	(let ((other-persp (persp-buffer-in-other-p buffer)))
+	  (when (eq (car-safe other-persp) (selected-frame))
+	    (list :name (cdr other-persp) :kind 'perspective))))))))
+
+(defun perspective-project-bridge--consult-buffer-candidate-buffer (candidate)
+  "Resolve consult buffer CANDIDATE to a live buffer, or nil."
+  (cond
+   ((bufferp candidate)
+    (and (buffer-live-p candidate) candidate))
+   ((stringp candidate)
+    (get-buffer candidate))
+   ((consp candidate)
+    (or (perspective-project-bridge--consult-buffer-candidate-buffer (cdr candidate))
+	(perspective-project-bridge--consult-buffer-candidate-buffer (car candidate))))
+   (t
+    nil)))
+
+(defun perspective-project-bridge--consult-buffer-switch-choice (buffer target)
+  "Prompt for how to open BUFFER using consult TARGET."
+  (pcase
+      (car
+       (read-multiple-choice
+	(format perspective-project-bridge-consult-buffer-prompt-format
+		(buffer-name buffer)
+		(plist-get target :name)
+		(or (perspective-project-bridge--current-perspective-name) "none"))
+	'((?s "switch" "Switch to the target perspective and open the buffer there")
+	  (?m "move" "Move the buffer to the current perspective and open it here")
+	  (?c "cancel" "Abort opening this candidate"))))
+    (?s 'switch)
+    (?m 'move)
+    (?c 'cancel)))
+
+(defun perspective-project-bridge--consult-buffer-open-target (target)
+  "Switch to consult buffer TARGET when needed."
+  (pcase (plist-get target :kind)
+    ('project
+     (perspective-project-bridge--switch-if-needed (plist-get target :name)))
+    ('perspective
+     (perspective-project-bridge--switch-perspective-if-needed
+      (plist-get target :name)))))
+
+(defun perspective-project-bridge--consult-buffer-open-buffer (candidate)
+  "Open consult buffer CANDIDATE using bridge policy."
+  (let* ((buffer (perspective-project-bridge--consult-buffer-candidate-buffer candidate))
+	 (target (and buffer
+		      (perspective-project-bridge--consult-buffer-target-for-buffer buffer)))
+	 (target-name (plist-get target :name))
+	 (current-name (perspective-project-bridge--current-perspective-name)))
+    (if (or (not buffer)
+	    (not target)
+	    (equal target-name current-name))
+	(funcall perspective-project-bridge--consult-buffer-action-function candidate)
+      (pcase (perspective-project-bridge--normalize-consult-buffer-switch-policy
+	      perspective-project-bridge-consult-buffer-switch-policy)
+	('always
+	 (perspective-project-bridge--consult-buffer-open-target target)
+	 (funcall perspective-project-bridge--consult-buffer-action-function candidate))
+	('never
+	 (persp-set-buffer buffer)
+	 (funcall perspective-project-bridge--consult-buffer-action-function candidate))
+	('prompt
+	 (pcase (perspective-project-bridge--consult-buffer-switch-choice buffer target)
+	   ('switch
+	    (perspective-project-bridge--consult-buffer-open-target target)
+	    (funcall perspective-project-bridge--consult-buffer-action-function
+		     candidate))
+	   ('move
+	    (persp-set-buffer buffer)
+	    (funcall perspective-project-bridge--consult-buffer-action-function
+		     candidate))
+	   ('cancel
+	    nil)))))))
+
+(defun perspective-project-bridge--consult-transform-source (source)
+  "Return temporary consult SOURCE with bridge-specific buffer behavior."
+  (let ((plist (copy-tree (if (symbolp source) (symbol-value source) source))))
+    (if (eq (plist-get plist :category) 'buffer)
+	(let ((copy (copy-sequence plist)))
+	  (setq copy (plist-put copy :state nil))
+	  (plist-put copy :action
+		     #'perspective-project-bridge--consult-buffer-open-buffer))
+      plist)))
+
+(defun perspective-project-bridge--consult-buffer-sources ()
+  "Return consult buffer sources for `consult-buffer-with-project-perspective'."
+  (mapcar #'perspective-project-bridge--consult-transform-source
+	  consult-buffer-sources))
+
+(defun perspective-project-bridge--consult-file-action (file &rest args)
+  "Run consult file action for FILE with bridge file policy."
+  (if (or perspective-project-bridge--in-find-file-advice
+	  (not perspective-project-bridge-mode))
+      (apply perspective-project-bridge--consult-file-action-function file args)
+    (let* ((perspective-project-bridge--in-find-file-advice t)
+	   (target (perspective-project-bridge--switch-target-for-file
+		    file
+		    perspective-project-bridge-consult-prompt-format)))
+      (perspective-project-bridge--apply-switch-policy
+       perspective-project-bridge-consult-prompt-on-file-action
+       target)
+      (apply perspective-project-bridge--consult-file-action-function file args))))
 
 (defun perspective-project-bridge-find-perspective-for-buffer (buffer)
   "Find a project-specific perspective for BUFFER.
@@ -323,33 +486,25 @@ TARGET must be a cons of perspective name and prompt format, or nil."
 	 target)
 	(apply orig-fun args)))))
 
-(defun perspective-project-bridge-consult-file-action-advice (orig-fun file &rest args)
-  "Around advice for `consult--file-action'."
-  (if (or perspective-project-bridge--in-find-file-advice
-	  (not perspective-project-bridge-mode))
-      (apply orig-fun file args)
-    (let* ((perspective-project-bridge--in-find-file-advice t)
-	   (target (perspective-project-bridge--switch-target-for-file
-		    file
-		    perspective-project-bridge-consult-prompt-format)))
-      (perspective-project-bridge--apply-switch-policy
-       perspective-project-bridge-consult-prompt-on-file-action
-       target)
-      (apply orig-fun file args))))
-
-(defun perspective-project-bridge--add-consult-advice-if-available ()
-  "Add consult advice when consult is available."
-  (when (fboundp 'consult--file-action)
-    (perspective-project-bridge--add-advice-once
-     'consult--file-action :around
-     #'perspective-project-bridge-consult-file-action-advice)))
-
-(defun perspective-project-bridge--remove-consult-advice-if-available ()
-  "Remove consult advice when consult is available."
-  (when (fboundp 'consult--file-action)
-    (perspective-project-bridge--remove-advice-if-present
-     'consult--file-action
-     #'perspective-project-bridge-consult-file-action-advice)))
+(defun consult-buffer-with-project-perspective ()
+  "Run `consult-buffer' with project perspective-aware actions."
+  (interactive)
+  (unless (fboundp 'consult-buffer)
+    (user-error "consult-buffer-with-project-perspective requires consult"))
+  (if (not (and perspective-project-bridge-mode persp-mode))
+      (consult-buffer)
+    (let ((perspective-project-bridge--consult-buffer-action-function
+	   (symbol-function 'consult--buffer-action))
+	  (perspective-project-bridge--consult-file-action-function
+	   (and (fboundp 'consult--file-action)
+		(symbol-function 'consult--file-action)))
+	  (consult-buffer-sources
+	   (perspective-project-bridge--consult-buffer-sources)))
+      (if perspective-project-bridge--consult-file-action-function
+	  (cl-letf (((symbol-function 'consult--file-action)
+		     #'perspective-project-bridge--consult-file-action))
+	    (consult-buffer))
+	(consult-buffer)))))
 
 ;;;###autoload
 (define-minor-mode perspective-project-bridge-mode
@@ -359,7 +514,7 @@ Creates perspectives for project.el projects."
   :global t
   (if perspective-project-bridge-mode
       (if persp-mode
-	  (progn
+	(progn
 	    ;; Add advices
 	    (dolist (func perspective-project-bridge-project-functions)
 	      (perspective-project-bridge--add-advice-once
@@ -367,10 +522,6 @@ Creates perspectives for project.el projects."
 	    (dolist (func perspective-project-bridge-find-file-functions)
 	      (perspective-project-bridge--add-advice-once
 	       func :around #'perspective-project-bridge-find-file-advice))
-	    (perspective-project-bridge--add-consult-advice-if-available)
-	    (with-eval-after-load 'consult
-	      (when perspective-project-bridge-mode
-		(perspective-project-bridge--add-consult-advice-if-available)))
 	    (persp-make-variable-persp-local 'perspective-project-bridge-persp))
 	(message "You can not enable perspective-project-bridge-mode \
 unless persp is active.")
@@ -381,8 +532,7 @@ unless persp is active.")
        func #'perspective-project-bridge))
     (dolist (func perspective-project-bridge-find-file-functions)
       (perspective-project-bridge--remove-advice-if-present
-       func #'perspective-project-bridge-find-file-advice))
-    (perspective-project-bridge--remove-consult-advice-if-available)))
+       func #'perspective-project-bridge-find-file-advice))))
 
 (provide 'perspective-project-bridge)
 

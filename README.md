@@ -48,13 +48,18 @@ When `perspective-project-bridge-mode` is enabled, interactive file-opening comm
 - When the policy is `always`, the same target switch happens without prompting.
 - The non-project prompt text is customizable via `perspective-project-bridge-non-project-file-prompt-format`.
 
-### `consult-buffer` file selection behavior
-When `consult` is available, `consult--file-action` is integrated too:
+### `consult-buffer-with-project-perspective`
+Standard `consult-buffer` behavior is left untouched. When `consult` is available, use
+`consult-buffer-with-project-perspective` for perspective-aware selection:
 
-- Selecting a file candidate from `consult-buffer` can prompt for project perspective switching.
-- Existing file buffers and newly opened files are handled with the same switching rules.
+- File candidates follow the existing file-opening rules.
 - `perspective-project-bridge-consult-prompt-on-file-action` accepts `prompt`, `always`, or `never`.
-- Legacy values remain supported: `t` behaves like `prompt`, and `nil` behaves like `never`.
-- When the policy is `always`, the same target switch happens without prompting.
-- Prompt text is customizable via `perspective-project-bridge-consult-prompt-format`.
+- Prompt text for file candidates is customizable via `perspective-project-bridge-consult-prompt-format`.
 - Non-project file candidates also prompt for a switch to `persp-initial-frame-name` by default.
+- Existing buffer candidates use `perspective-project-bridge-consult-buffer-switch-policy`.
+- `prompt` asks whether to switch to the buffer's perspective, move the buffer into the current perspective, or cancel.
+- `always` switches to the buffer's perspective automatically.
+- `never` keeps the current perspective and moves the selected buffer there.
+- Prompt text for buffer candidates is customizable via `perspective-project-bridge-consult-buffer-prompt-format`.
+- Buffer preview is disabled in this command to avoid leaving buffers attached to the current perspective after preview or `C-g`.
+- If you use `consult-customize` with command-specific settings, include `consult-buffer-with-project-perspective` explicitly.

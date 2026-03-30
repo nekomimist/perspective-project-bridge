@@ -31,18 +31,21 @@
     - No prompt/switch when already in the target perspective.
     - No prompt/switch when no project root is available and non-project prompting is disabled.
     - Reentry guard avoids nested advice behavior.
-- Consult file action (`:around`)
-  - Added when `consult--file-action` is available.
+- `consult-buffer-with-project-perspective`
+  - Standalone interactive command; standard `consult-buffer` is not advised or modified.
   - Behavior:
-    1. Resolve the selected file's project.
-    2. If no project is found, target `persp-initial-frame-name` unless non-project prompting is disabled.
-    3. Apply the configured switch policy: `prompt`, `always`, or `never`.
-    4. On `prompt` confirmation or `always`, switch to the selected perspective.
-    5. Run `consult--file-action` to select/open the target buffer.
+    1. Reuse `consult-buffer` sources with temporary source transformation at call time.
+    2. Disable preview for buffer-category sources to avoid perspective pollution during preview and `C-g`.
+    3. For file candidates, resolve the selected file's project and reuse the existing file switch policy.
+    4. For buffer candidates, resolve a target perspective in this order:
+       - project perspective from the buffer's project root
+       - first other perspective on the selected frame via `persp-buffer-in-other-p`
+    5. Apply buffer policy: `prompt`, `always`, or `never`.
+    6. `prompt` offers switch, move, or cancel.
   - Safety:
-    - Existing file buffers and newly opened files use the same project switch decision.
-    - No prompt/switch when already in the target perspective.
-    - No prompt/switch when no project root is available and non-project prompting is disabled.
+    - Standard `consult-buffer` behavior remains unchanged.
+    - File actions reuse the reentry guard so nested `find-file` prompts do not occur.
+    - Cross-frame non-project buffer membership is ignored.
 
 ## Customization Surface
 - `perspective-project-bridge-project-functions`
@@ -52,9 +55,13 @@
 - `perspective-project-bridge-confirm-on-interactive-find-file`
   - Switch policy for interactive find-file calls (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
 - `perspective-project-bridge-consult-prompt-on-file-action`
-  - Switch policy for consult file actions (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
+  - Switch policy for file candidates in `consult-buffer-with-project-perspective` (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
 - `perspective-project-bridge-consult-prompt-format`
-  - Prompt format used for consult file actions.
+  - Prompt format used for file candidates in `consult-buffer-with-project-perspective`.
+- `perspective-project-bridge-consult-buffer-switch-policy`
+  - Switch policy for existing buffer candidates in `consult-buffer-with-project-perspective` (`prompt`, `always`, `never`; `query`/`t` => `prompt`, `nil` => `never`).
+- `perspective-project-bridge-consult-buffer-prompt-format`
+  - Prompt format used before choosing switch, move, or cancel for existing buffer candidates.
 - `perspective-project-bridge-prompt-on-non-project-file`
   - Whether non-project files prompt for switching to `persp-initial-frame-name`.
 - `perspective-project-bridge-non-project-file-prompt-format`

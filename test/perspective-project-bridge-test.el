@@ -32,6 +32,8 @@
     nil)
   (provide 'perspective))
 
+(defvar consult-buffer-sources)
+
 (load-file (expand-file-name "../perspective-project-bridge.el"
                              (file-name-directory
                               (or load-file-name buffer-file-name))))
@@ -482,13 +484,18 @@
          "src/file.el")
         (should (= orig-count 1))))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-switches-after-confirmation ()
+(ert-deftest perspective-project-bridge-consult-file-action-switches-after-confirmation ()
   "Switch to project perspective for consult file actions when confirmed."
-  (let ((perspective-project-bridge-mode t)
+  (let* ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action 'prompt)
         (switched-name nil)
         (prompt-count 0)
-        (orig-saw-switch nil))
+        (orig-saw-switch nil)
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           (setq orig-saw-switch (equal switched-name "sample-project"))
+           'ok))
+         )
     (with-temp-buffer
       (cl-letf (((symbol-function 'project-current)
                  (lambda (&rest _args)
@@ -512,21 +519,22 @@
                 ((symbol-function 'persp-switch)
                  (lambda (name)
                    (setq switched-name name))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           (setq orig-saw-switch (equal switched-name "sample-project"))
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (= prompt-count 1))
         (should (equal switched-name "sample-project"))
         (should orig-saw-switch)))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-switches-without-prompt-when-policy-always ()
+(ert-deftest perspective-project-bridge-consult-file-action-switches-without-prompt-when-policy-always ()
   "Switch perspectives without prompting when consult policy is `always'."
-  (let ((perspective-project-bridge-mode t)
+  (let* ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action 'always)
         (switched-name nil)
-        (orig-saw-switch nil))
+        (orig-saw-switch nil)
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           (setq orig-saw-switch (equal switched-name "sample-project"))
+           'ok))
+         )
     (with-temp-buffer
       (cl-letf (((symbol-function 'project-current)
                  (lambda (&rest _args)
@@ -549,18 +557,17 @@
                 ((symbol-function 'persp-switch)
                  (lambda (name)
                    (setq switched-name name))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           (setq orig-saw-switch (equal switched-name "sample-project"))
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (equal switched-name "sample-project"))
         (should orig-saw-switch)))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-skips-switch-when-policy-never ()
+(ert-deftest perspective-project-bridge-consult-file-action-skips-switch-when-policy-never ()
   "Keep the current perspective without prompting when consult policy is `never'."
   (let ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action 'never)
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           'ok))
         (switch-count 0))
     (with-temp-buffer
       (cl-letf (((symbol-function 'project-current)
@@ -575,16 +582,16 @@
                 ((symbol-function 'persp-switch)
                  (lambda (&rest _args)
                    (setq switch-count (1+ switch-count)))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (= switch-count 0))))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-keeps-current-when-declined ()
+(ert-deftest perspective-project-bridge-consult-file-action-keeps-current-when-declined ()
   "Do not switch perspectives for consult file actions when prompt is declined."
   (let ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action t)
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           'ok))
         (prompt-count 0)
         (switch-count 0))
     (with-temp-buffer
@@ -607,22 +614,24 @@
                 ((symbol-function 'persp-switch)
                  (lambda (&rest _args)
                    (setq switch-count (1+ switch-count)))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (= prompt-count 1))
         (should (= switch-count 0))))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-switches-non-project-file-to-initial-perspective ()
+(ert-deftest perspective-project-bridge-consult-file-action-switches-non-project-file-to-initial-perspective ()
   "Switch to the initial perspective for consult non-project file actions."
-  (let ((perspective-project-bridge-mode t)
-        (perspective-project-bridge-consult-prompt-on-file-action t)
-        (perspective-project-bridge-prompt-on-non-project-file t)
-        (persp-initial-frame-name "main")
-        (switched-name nil)
-        (prompt-count 0)
-        (orig-saw-switch nil))
+  (let* ((perspective-project-bridge-mode t)
+         (perspective-project-bridge-consult-prompt-on-file-action t)
+         (perspective-project-bridge-prompt-on-non-project-file t)
+         (persp-initial-frame-name "main")
+         (switched-name nil)
+         (prompt-count 0)
+         (orig-saw-switch nil)
+         (perspective-project-bridge--consult-file-action-function
+          (lambda (&rest _args)
+            (setq orig-saw-switch (equal switched-name "main"))
+            'ok))
+         )
     (with-temp-buffer
       (cl-letf (((symbol-function 'project-current)
                  (lambda (&rest _args)
@@ -646,21 +655,20 @@
                 ((symbol-function 'persp-switch)
                  (lambda (name)
                    (setq switched-name name))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           (setq orig-saw-switch (equal switched-name "main"))
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (= prompt-count 1))
         (should (equal switched-name "main"))
         (should orig-saw-switch)))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-skips-non-project-prompt-when-already-in-initial-perspective ()
+(ert-deftest perspective-project-bridge-consult-file-action-skips-non-project-prompt-when-already-in-initial-perspective ()
   "Skip non-project prompt for consult file action in the initial perspective."
   (let ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action t)
         (perspective-project-bridge-prompt-on-non-project-file t)
         (persp-initial-frame-name "main")
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           'ok))
         (prompt-count 0)
         (switch-count 0))
     (with-temp-buffer
@@ -683,17 +691,17 @@
                 ((symbol-function 'persp-switch)
                  (lambda (&rest _args)
                    (setq switch-count (1+ switch-count)))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (= prompt-count 0))
         (should (= switch-count 0))))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-skips-when-already-in-target ()
+(ert-deftest perspective-project-bridge-consult-file-action-skips-when-already-in-target ()
   "Do not prompt for consult file actions when already in target perspective."
   (let ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action t)
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           'ok))
         (prompt-count 0)
         (switch-count 0))
     (with-temp-buffer
@@ -716,17 +724,17 @@
                 ((symbol-function 'persp-switch)
                  (lambda (&rest _args)
                    (setq switch-count (1+ switch-count)))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           'ok)
-         "src/file.el")
+        (perspective-project-bridge--consult-file-action "src/file.el")
         (should (= prompt-count 0))
         (should (= switch-count 0))))))
 
-(ert-deftest perspective-project-bridge-consult-file-action-advice-skips-when-root-missing ()
+(ert-deftest perspective-project-bridge-consult-file-action-skips-when-root-missing ()
   "Do not prompt for consult file actions when project root is unavailable."
   (let ((perspective-project-bridge-mode t)
         (perspective-project-bridge-consult-prompt-on-file-action t)
+        (perspective-project-bridge--consult-file-action-function
+         (lambda (&rest _args)
+           'ok))
         (perspective-project-bridge-prompt-on-non-project-file nil))
     (with-temp-buffer
       (cl-letf (((symbol-function 'project-current)
@@ -738,10 +746,167 @@
                 ((symbol-function 'y-or-n-p)
                  (lambda (&rest _args)
                    (ert-fail "Prompt should not run when project root is unavailable"))))
-        (perspective-project-bridge-consult-file-action-advice
-         (lambda (&rest _args)
-           'ok)
-         "src/file.el")))))
+        (perspective-project-bridge--consult-file-action "src/file.el")))))
+
+(ert-deftest perspective-project-bridge-consult-buffer-target-prefers-project ()
+  "Prefer project perspective names over other perspective membership."
+  (let ((perspective-project-bridge-mode t))
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (&rest _args)
+                   'mock-project))
+                ((symbol-function 'project-root)
+                 (lambda (_project)
+                   "/tmp/sample-project/"))
+                ((symbol-function 'persp-buffer-in-other-p)
+                 (lambda (_buffer)
+                   (cons (selected-frame) "other-perspective"))))
+        (should (equal (perspective-project-bridge--consult-buffer-target-for-buffer
+                        (current-buffer))
+                       '(:name "sample-project" :kind project)))))))
+
+(ert-deftest perspective-project-bridge-normalize-consult-buffer-switch-policy-treats-query-as-prompt ()
+  "Treat legacy `query' as `prompt' for consult buffer policy."
+  (should (eq (perspective-project-bridge--normalize-consult-buffer-switch-policy 'query)
+              'prompt)))
+
+(ert-deftest perspective-project-bridge-consult-buffer-open-buffer-switches-project-buffer ()
+  "Switch to the project perspective when consult buffer policy is `always'."
+  (let* ((perspective-project-bridge-mode t)
+         (perspective-project-bridge-consult-buffer-switch-policy 'always)
+         (switched-name nil)
+         (orig-saw-switch nil)
+         (perspective-project-bridge--consult-buffer-action-function
+          (lambda (&rest _args)
+            (setq orig-saw-switch (equal switched-name "sample-project"))
+            'ok))
+         )
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (&rest _args)
+                   'mock-project))
+                ((symbol-function 'project-root)
+                 (lambda (_project)
+                   "/tmp/sample-project/"))
+                ((symbol-function 'persp-curr)
+                 (lambda ()
+                   (list :name "other-project")))
+                ((symbol-function 'persp-new)
+                 (lambda (name)
+                   (list :name name)))
+                ((symbol-function 'persp-name)
+                 (lambda (persp)
+                   (plist-get persp :name)))
+                ((symbol-function 'persp-switch)
+                 (lambda (name)
+                   (setq switched-name name))))
+        (rename-buffer "sample-buffer" t)
+        (perspective-project-bridge--consult-buffer-open-buffer (current-buffer))
+        (should (equal switched-name "sample-project"))
+        (should orig-saw-switch)))))
+
+(ert-deftest perspective-project-bridge-consult-buffer-open-buffer-moves-when-policy-never ()
+  "Move the selected buffer into the current perspective when policy is `never'."
+  (let* ((perspective-project-bridge-mode t)
+         (perspective-project-bridge-consult-buffer-switch-policy 'never)
+         (moved-buffer nil)
+         (action-called nil)
+         (perspective-project-bridge--consult-buffer-action-function
+          (lambda (&rest _args)
+            (setq action-called t)
+            'ok))
+         )
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (&rest _args)
+                   nil))
+                ((symbol-function 'persp-buffer-in-other-p)
+                 (lambda (_buffer)
+                   (cons (selected-frame) "other-perspective")))
+                ((symbol-function 'persp-curr)
+                 (lambda ()
+                   (list :name "current-perspective")))
+                ((symbol-function 'persp-name)
+                 (lambda (persp)
+                   (plist-get persp :name)))
+                ((symbol-function 'persp-set-buffer)
+                 (lambda (buffer)
+                   (setq moved-buffer buffer))))
+        (rename-buffer "sample-buffer" t)
+        (perspective-project-bridge--consult-buffer-open-buffer (current-buffer))
+        (should (eq moved-buffer (current-buffer)))
+        (should action-called)))))
+
+(ert-deftest perspective-project-bridge-consult-buffer-open-buffer-cancels-prompt ()
+  "Do not open or move the buffer when consult prompt is cancelled."
+  (let* ((perspective-project-bridge-mode t)
+         (perspective-project-bridge-consult-buffer-switch-policy 'prompt)
+         (action-called nil)
+         (move-count 0)
+         (switch-count 0)
+         (perspective-project-bridge--consult-buffer-action-function
+          (lambda (&rest _args)
+            (setq action-called t)
+            'ok))
+         )
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (&rest _args)
+                   nil))
+                ((symbol-function 'persp-buffer-in-other-p)
+                 (lambda (_buffer)
+                   (cons (selected-frame) "other-perspective")))
+                ((symbol-function 'persp-curr)
+                 (lambda ()
+                   (list :name "current-perspective")))
+                ((symbol-function 'persp-name)
+                 (lambda (persp)
+                   (plist-get persp :name)))
+                ((symbol-function 'read-multiple-choice)
+                 (lambda (&rest _args)
+                   '(?c "cancel" "Abort opening this candidate")))
+                ((symbol-function 'persp-set-buffer)
+                 (lambda (&rest _args)
+                   (setq move-count (1+ move-count))))
+                ((symbol-function 'persp-switch)
+                 (lambda (&rest _args)
+                   (setq switch-count (1+ switch-count)))))
+        (rename-buffer "sample-buffer" t)
+        (perspective-project-bridge--consult-buffer-open-buffer (current-buffer))
+        (should-not action-called)
+        (should (= move-count 0))
+        (should (= switch-count 0))))))
+
+(ert-deftest consult-buffer-with-project-perspective-transforms-buffer-sources ()
+  "Rewrite consult buffer sources without touching file preview state."
+  (let ((perspective-project-bridge-mode t)
+        (persp-mode t)
+        (consult-buffer-sources
+         (list '(:name "Buffers" :category buffer :state buffer-state)
+               '(:name "Files" :category file :state file-state)))
+        (orig-file-action (lambda (&rest _args) 'file))
+        (orig-buffer-action (lambda (&rest _args) 'buffer))
+        (saw-buffer-source nil)
+        (saw-file-source nil)
+        (file-action-overridden nil))
+    (cl-letf (((symbol-function 'consult--file-action)
+               orig-file-action)
+              ((symbol-function 'consult--buffer-action)
+               orig-buffer-action)
+              ((symbol-function 'consult-buffer)
+               (lambda ()
+                 (setq saw-buffer-source (car consult-buffer-sources))
+                 (setq saw-file-source (cadr consult-buffer-sources))
+                 (setq file-action-overridden
+                       (not (eq (symbol-function 'consult--file-action)
+                                orig-file-action)))
+                 'ok)))
+      (should (eq (consult-buffer-with-project-perspective) 'ok))
+      (should (null (plist-get saw-buffer-source :state)))
+      (should (eq (plist-get saw-buffer-source :action)
+                  #'perspective-project-bridge--consult-buffer-open-buffer))
+      (should (eq (plist-get saw-file-source :state) 'file-state))
+      (should file-action-overridden))))
 
 (provide 'perspective-project-bridge-test)
 
