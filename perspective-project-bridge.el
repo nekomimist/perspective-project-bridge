@@ -101,7 +101,10 @@ Use `prompt' to ask before switching, `always' to switch without
 asking, or `never' to keep the current perspective.
 
 Legacy boolean values are supported for compatibility: `t' means
-`prompt' and `nil' means `never'."
+`prompt' and `nil' means `never'.
+
+With a plain universal argument (`C-u'), `always' and `never'
+behave like `prompt' for that invocation only."
   :group 'perspective-project-bridge
   :type '(choice (const :tag "Prompt before switching" prompt)
 		 (const :tag "Switch automatically" always)
@@ -113,7 +116,11 @@ Use `prompt' to ask before switching, `always' to switch without
 asking, or `never' to keep the current perspective.
 
 Legacy boolean values are supported for compatibility: `t' means
-`prompt' and `nil' means `never'."
+`prompt' and `nil' means `never'.
+
+With a plain universal argument (`C-u'),
+`consult-buffer-with-project-perspective' treats `always' and
+`never' like `prompt' for that invocation only."
   :group 'perspective-project-bridge
   :type '(choice (const :tag "Prompt before switching" prompt)
 		 (const :tag "Switch automatically" always)
@@ -132,7 +139,11 @@ switch to the buffer's perspective, or `never' to keep the
 current perspective and move the buffer there.
 
 Compatibility aliases are supported: `query' and `t' mean
-`prompt', and `nil' means `never'."
+`prompt', and `nil' means `never'.
+
+With a plain universal argument (`C-u'),
+`consult-buffer-with-project-perspective' treats `always' and
+`never' like `prompt' for that invocation only."
   :group 'perspective-project-bridge
   :type '(choice (const :tag "Choose switch or move" prompt)
 		 (const :tag "Switch automatically" always)
@@ -167,9 +178,17 @@ Compatibility aliases are supported: `query' and `t' mean
 (defvar perspective-project-bridge--consult-file-action-function nil
   "Original consult file action used by `consult-buffer-with-project-perspective'.")
 
+(defvar perspective-project-bridge--consult-prompt-override nil
+  "Non-nil when consult actions should treat automatic policies as `prompt'.")
+
 (defconst perspective-project-bridge--find-file-project-prompt-format
   "Switch to project perspective `%s'? "
   "Prompt format used for project perspective switching in `find-file' advice.")
+
+(defun perspective-project-bridge--plain-universal-argument-p (arg)
+  "Return non-nil when ARG is a plain universal argument.
+This matches a single `C-u' and excludes numeric prefix arguments."
+  (equal arg '(4)))
 
 (defun perspective-project-bridge--normalize-switch-policy (policy)
   "Return canonical switch policy for POLICY.
@@ -197,6 +216,27 @@ Canonical values are `prompt', `always', and `never'."
    (t
     (error "Invalid perspective-project-bridge consult buffer switch policy: %S"
 	   policy))))
+
+(defun perspective-project-bridge--effective-switch-policy
+    (policy &optional prompt-override)
+  "Return effective file switch POLICY.
+When PROMPT-OVERRIDE is non-nil, `always' and `never' behave like `prompt'."
+  (let ((normalized (perspective-project-bridge--normalize-switch-policy policy)))
+    (if (and prompt-override
+	     (memq normalized '(always never)))
+	'prompt
+      normalized)))
+
+(defun perspective-project-bridge--effective-consult-buffer-switch-policy
+    (policy &optional prompt-override)
+  "Return effective consult buffer switch POLICY.
+When PROMPT-OVERRIDE is non-nil, `always' and `never' behave like `prompt'."
+  (let ((normalized
+	 (perspective-project-bridge--normalize-consult-buffer-switch-policy policy)))
+    (if (and prompt-override
+	     (memq normalized '(always never)))
+	'prompt
+      normalized)))
 
 (defun perspective-project-bridge--project-root (project)
   "Return root directory for PROJECT, or nil if it is unavailable."
@@ -299,11 +339,13 @@ PROMPT-FORMAT must be a string accepted by `format' with one `%s' placeholder."
 	     (y-or-n-p (format prompt-format project-name)))
     (perspective-project-bridge--switch-to-project-perspective project-name)))
 
-(defun perspective-project-bridge--apply-switch-policy (policy target)
+(defun perspective-project-bridge--apply-switch-policy
+    (policy target &optional prompt-override)
   "Apply switch POLICY to TARGET.
 TARGET must be a cons of perspective name and prompt format, or nil."
   (when target
-    (pcase (perspective-project-bridge--normalize-switch-policy policy)
+    (pcase (perspective-project-bridge--effective-switch-policy
+	    policy prompt-override)
       ('prompt
        (perspective-project-bridge--prompt-and-switch-if-needed
 	(car target)
@@ -375,8 +417,9 @@ The plist contains `:name' and `:kind'."
 	    (not target)
 	    (equal target-name current-name))
 	(funcall perspective-project-bridge--consult-buffer-action-function candidate)
-      (pcase (perspective-project-bridge--normalize-consult-buffer-switch-policy
-	      perspective-project-bridge-consult-buffer-switch-policy)
+      (pcase (perspective-project-bridge--effective-consult-buffer-switch-policy
+	      perspective-project-bridge-consult-buffer-switch-policy
+	      perspective-project-bridge--consult-prompt-override)
 	('always
 	 (perspective-project-bridge--consult-buffer-open-target target)
 	 (funcall perspective-project-bridge--consult-buffer-action-function candidate))
@@ -416,13 +459,14 @@ The plist contains `:name' and `:kind'."
   (if (or perspective-project-bridge--in-find-file-advice
 	  (not perspective-project-bridge-mode))
       (apply perspective-project-bridge--consult-file-action-function file args)
-    (let* ((perspective-project-bridge--in-find-file-advice t)
+      (let* ((perspective-project-bridge--in-find-file-advice t)
 	   (target (perspective-project-bridge--switch-target-for-file
 		    file
 		    perspective-project-bridge-consult-prompt-format)))
       (perspective-project-bridge--apply-switch-policy
        perspective-project-bridge-consult-prompt-on-file-action
-       target)
+       target
+       perspective-project-bridge--consult-prompt-override)
       (apply perspective-project-bridge--consult-file-action-function file args))))
 
 (defun perspective-project-bridge-find-perspective-for-buffer (buffer)
@@ -477,13 +521,17 @@ The plist contains `:name' and `:kind'."
 	    (not perspective-project-bridge-mode))
 	(apply orig-fun args)
       (let* ((perspective-project-bridge--in-find-file-advice t)
+	     (prompt-override
+	      (perspective-project-bridge--plain-universal-argument-p
+	       current-prefix-arg))
 	     (target (and interactive-call
 			  (perspective-project-bridge--switch-target-for-file
 			   (car args)
 			   perspective-project-bridge--find-file-project-prompt-format))))
 	(perspective-project-bridge--apply-switch-policy
 	 perspective-project-bridge-confirm-on-interactive-find-file
-	 target)
+	 target
+	 prompt-override)
 	(apply orig-fun args)))))
 
 (defun consult-buffer-with-project-perspective ()
@@ -493,7 +541,10 @@ The plist contains `:name' and `:kind'."
     (user-error "consult-buffer-with-project-perspective requires consult"))
   (if (not (and perspective-project-bridge-mode persp-mode))
       (consult-buffer)
-    (let ((perspective-project-bridge--consult-buffer-action-function
+    (let ((perspective-project-bridge--consult-prompt-override
+	   (perspective-project-bridge--plain-universal-argument-p
+	    current-prefix-arg))
+	  (perspective-project-bridge--consult-buffer-action-function
 	   (symbol-function 'consult--buffer-action))
 	  (perspective-project-bridge--consult-file-action-function
 	   (and (fboundp 'consult--file-action)

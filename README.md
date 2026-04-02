@@ -46,6 +46,7 @@ When `perspective-project-bridge-mode` is enabled, interactive file-opening comm
 - If the opened file is not in a detected project, you are asked whether to switch to `persp-initial-frame-name`.
 - If the opened file is not in a detected project (or project root is unavailable) and non-project prompting is disabled, the file stays in the current perspective.
 - When the policy is `always`, the same target switch happens without prompting.
+- A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt` for that invocation only.
 - The non-project prompt text is customizable via `perspective-project-bridge-non-project-file-prompt-format`.
 
 ### `consult-buffer-with-project-perspective`
@@ -60,6 +61,7 @@ Standard `consult-buffer` behavior is left untouched. When `consult` is availabl
 - `prompt` asks whether to switch to the buffer's perspective, move the buffer into the current perspective, or cancel.
 - `always` switches to the buffer's perspective automatically.
 - `never` keeps the current perspective and moves the selected buffer there.
+- A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt` for that invocation only.
 - Prompt text for buffer candidates is customizable via `perspective-project-bridge-consult-buffer-prompt-format`.
 - Buffer preview is disabled in this command to avoid leaving buffers attached to the current perspective after preview or `C-g`.
 - If you use `consult-customize` with command-specific settings, include `consult-buffer-with-project-perspective` explicitly.

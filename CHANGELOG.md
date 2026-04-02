@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Added a plain universal-argument override (`C-u`) that temporarily treats `always` and `never` like `prompt` for interactive file and consult actions.
 - Expanded interactive file-action prompt settings into 3-state switch policies: `prompt`, `always`, and `never`.
 - Kept legacy boolean compatibility for file-action switch settings (`t` => `prompt`, `nil` => `never`).
 - Added interactive `find-file` integration that asks whether to switch to the file's project perspective.

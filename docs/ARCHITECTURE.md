@@ -24,6 +24,7 @@
     1. Resolve the target file's project from the command argument.
     2. If no project is found, target `persp-initial-frame-name` unless non-project prompting is disabled.
     3. If call was interactive, apply the configured switch policy: `prompt`, `always`, or `never`.
+       A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt`.
     4. On `prompt` confirmation or `always`, switch to the selected perspective.
     5. Execute the original find-file command in the selected perspective.
   - Safety:
@@ -41,6 +42,7 @@
        - project perspective from the buffer's project root
        - first other perspective on the selected frame via `persp-buffer-in-other-p`
     5. Apply buffer policy: `prompt`, `always`, or `never`.
+       A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt`.
     6. `prompt` offers switch, move, or cancel.
   - Safety:
     - Standard `consult-buffer` behavior remains unchanged.
@@ -54,12 +56,15 @@
   - Which find-file commands prompt for perspective switching.
 - `perspective-project-bridge-confirm-on-interactive-find-file`
   - Switch policy for interactive find-file calls (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
+    A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt`.
 - `perspective-project-bridge-consult-prompt-on-file-action`
   - Switch policy for file candidates in `consult-buffer-with-project-perspective` (`prompt`, `always`, `never`; legacy `t`/`nil` also supported).
+    A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt`.
 - `perspective-project-bridge-consult-prompt-format`
   - Prompt format used for file candidates in `consult-buffer-with-project-perspective`.
 - `perspective-project-bridge-consult-buffer-switch-policy`
   - Switch policy for existing buffer candidates in `consult-buffer-with-project-perspective` (`prompt`, `always`, `never`; `query`/`t` => `prompt`, `nil` => `never`).
+    A plain universal argument (`C-u`) temporarily treats `always` and `never` like `prompt`.
 - `perspective-project-bridge-consult-buffer-prompt-format`
   - Prompt format used before choosing switch, move, or cancel for existing buffer candidates.
 - `perspective-project-bridge-prompt-on-non-project-file`
