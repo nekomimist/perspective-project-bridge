@@ -33,6 +33,7 @@
   (provide 'perspective))
 
 (defvar consult-buffer-sources)
+(provide 'consult)
 
 (load-file (expand-file-name "../perspective-project-bridge.el"
                              (file-name-directory
@@ -1058,6 +1059,16 @@
                (lambda ()
                  perspective-project-bridge--consult-prompt-override)))
       (should (consult-buffer-with-project-perspective)))))
+
+(ert-deftest consult-buffer-with-project-perspective-errors-when-consult-unavailable ()
+  "Signal user-error when consult cannot be loaded."
+  (let ((orig-require (symbol-function 'require)))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &rest args)
+                 (if (eq feature 'consult)
+                     nil
+                   (apply orig-require feature args)))))
+      (should-error (consult-buffer-with-project-perspective) :type 'user-error))))
 
 (provide 'perspective-project-bridge-test)
 

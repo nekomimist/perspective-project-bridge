@@ -537,7 +537,7 @@ The plist contains `:name' and `:kind'."
 (defun consult-buffer-with-project-perspective ()
   "Run `consult-buffer' with project perspective-aware actions."
   (interactive)
-  (unless (fboundp 'consult-buffer)
+  (unless (require 'consult nil t)
     (user-error "consult-buffer-with-project-perspective requires consult"))
   (if (not (and perspective-project-bridge-mode persp-mode))
       (consult-buffer)
