@@ -293,10 +293,8 @@ PROJECT-PROMPT-FORMAT is used when FILE belongs to a detected project."
 
 (defun perspective-project-bridge--switch-to-project-perspective (name)
   "Switch to perspective NAME and mark it as project-specific."
-  (let ((persp (persp-new name)))
-    (with-perspective (persp-name persp)
-      (setq perspective-project-bridge-persp t))
-    (persp-switch (persp-name persp))))
+  (persp-switch name)
+  (setq perspective-project-bridge-persp t))
 
 (defun perspective-project-bridge--add-advice-once (symbol where function)
   "Add FUNCTION as advice on SYMBOL at WHERE, unless it is already present."
@@ -489,14 +487,20 @@ The plist contains `:name' and `:kind'."
     (mapc #'perspective-project-bridge-find-perspective-for-buffer
           (buffer-list))))
 
+(defun perspective-project-bridge--project-perspective-p (name)
+  "Return non-nil when perspective NAME is marked project-specific."
+  (let ((persp (gethash name (perspectives-hash))))
+    (and persp
+         (cdr (assq 'perspective-project-bridge-persp
+                    (persp-local-variables persp))))))
+
 (defun perspective-project-bridge-kill-perspectives ()
   "Kill all project-specific perspectives."
+  (persp-save)
   (mapc #'persp-kill
-	(cl-delete-if-not
-	 (lambda (p)
-	   (with-perspective p
-	     perspective-project-bridge-persp))
-	 (persp-names))))
+        (cl-remove-if-not
+         #'perspective-project-bridge--project-perspective-p
+         (persp-names))))
 
 (defun perspective-project-bridge (&rest _args)
   "Create/switch to a project perspective for current buffer.
